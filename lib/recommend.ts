@@ -120,6 +120,11 @@ export function buildRecommendation(
         }. Angka ini bisa berubah cepat.`
       );
     }
+    if (match.status === "post" && match.home.score != null && match.away.score != null) {
+      bullets.push(
+        `Estimasi ini disusun dari data sebelum kickoff, bukan dari hasil akhir. Hasil aktual: ${match.home.name} ${match.home.score}–${match.away.score} ${match.away.name}.`
+      );
+    }
   } else {
     bullets.push(estimate.reason || "Model prediksi belum bisa dipasang untuk laga ini.");
   }
@@ -179,7 +184,9 @@ export function buildRecommendation(
   }
 
   const headline = estimate.available
-    ? `Estimasi utama: ${outcomePhrase(pick, match.home.name, match.away.name)} · keyakinan ${confidence}`
+    ? match.status === "post" && match.home.score != null && match.away.score != null
+      ? `Estimasi pra-laga: ${outcomePhrase(pick, match.home.name, match.away.name)} · keyakinan ${confidence} · aktual ${match.home.score}–${match.away.score}`
+      : `Estimasi utama: ${outcomePhrase(pick, match.home.name, match.away.name)} · keyakinan ${confidence}`
     : "Estimasi belum tersedia";
 
   return {
