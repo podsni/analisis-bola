@@ -31,6 +31,8 @@ import {
   toHistMatches,
 } from "./dixoncoles";
 import { cached } from "./cache";
+import { isFreshWindow, isLiveOrImminent, livePollSeconds } from "./live";
+import { attachEstimateExtras, buildRecommendation } from "./recommend";
 import type {
   CommandTeam,
   HistMatch,
@@ -246,7 +248,7 @@ async function loadLeagueUncached(slug: string): Promise<LeaguePayload | null> {
   };
 }
 
-async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAnalysisPayload | null> {
+async function loadMatchUncached(slug: string, eventId: string, fresh = false): Promise<MatchAnalysisPayload | null> {
   const league = getLeague(slug);
   if (!league) return null;
   const fetchedAtWib = nowWibLabel();
@@ -262,6 +264,8 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
       table.standings.length > 0
         ? table.standings.reduce((s, r) => s + r.gf, 0) / table.standings.reduce((s, r) => s + r.played, 0)
         : null;
+    const estimate = attachEstimateExtras(poissonEstimate(built.home, built.away, leagueAvg));
+    const headToHead = { matches: built.h2h, note: built.note };
     return {
       slug: league.slug,
       leagueName: league.name,
@@ -270,10 +274,11 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
       match: built.match,
       home: built.home,
       away: built.away,
-      headToHead: { matches: built.h2h, note: built.note },
-      estimate: poissonEstimate(built.home, built.away, leagueAvg),
+      headToHead,
+      estimate,
       scorers: { home: [], away: [] },
       limitedNote: built.note,
+      recommendation: buildRecommendation(built.match, estimate, built.home, built.away, headToHead),
     };
   }
 
@@ -281,7 +286,7 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
   const prevYears = [String(year - 1), String(year - 2)];
 
   const [summary, standings, scorers] = await Promise.all([
-    fetchEspnSummary(league, eventId),
+    fetchEspnSummary(league, eventId, { fresh }),
     fetchEspnStandings(league),
     fetchEspnScorers(league),
   ]);
@@ -336,8 +341,19 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
       match.status === "post" ? toNum(match.away.score) : null
     );
   }
+  estimate = attachEstimateExtras(estimate);
   const hist = toHistMatches(await loadHistory(league.slug).catch(() => []));
   const asOf = new Date(match.dateUtc);
+  const headToHeadData = {
+    matches: merged,
+    summary: summary.seriesSummary,
+    note:
+      merged.length === 0
+        ? "Tidak ada pertemuan di jadwal musim ini maupun dua musim sebelumnya yang tersedia."
+        : acrossSeasons || summary.series.length
+          ? "Head-to-head merangkum pertemuan yang ada di ringkasan ESPN dan jadwal dua musim sebelumnya, jika sumbernya menyediakan."
+          : "Hanya pertemuan yang ada di jadwal tim ESPN.",
+  };
   return {
     slug: league.slug,
     leagueName: league.name,
@@ -346,16 +362,7 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
     match,
     home,
     away,
-    headToHead: {
-      matches: merged,
-      summary: summary.seriesSummary,
-      note:
-        merged.length === 0
-          ? "Tidak ada pertemuan di jadwal musim ini maupun dua musim sebelumnya yang tersedia."
-          : acrossSeasons || summary.series.length
-            ? "Head-to-head merangkum pertemuan yang ada di ringkasan ESPN dan jadwal dua musim sebelumnya, jika sumbernya menyediakan."
-            : "Hanya pertemuan yang ada di jadwal tim ESPN.",
-    },
+    headToHead: headToHeadData,
     estimate,
     scorers: { home: homeScorers, away: awayScorers },
     matchStats: summary.stats ?? undefined,
@@ -375,6 +382,8 @@ async function loadMatchUncached(slug: string, eventId: string): Promise<MatchAn
           note: "Delapan laga terakhir tiap tim yang masuk ke model sebelum kickoff, dengan bobot peluruhan waktu (paruh hidup 180 hari). Laga di jendela bentuk enam pertandingan terakhir bertanda bonus. Ini bahan baku estimasi, bukan saran taruhan.",
         }
       : undefined,
+    lineups: summary.lineups,
+    recommendation: buildRecommendation(match, estimate, home, away, headToHeadData),
   };
 }
 
@@ -512,7 +521,10 @@ async function loadLiveUncached(): Promise<LivePayload> {
   return {
     fetchedAtWib,
     fetchedAtMs,
-    pollSeconds: 30,
+    pollSeconds: livePollSeconds(
+      liveCards.length > 0,
+      upcomingCards.some((c) => isLiveOrImminent(c.match))
+    ),
     live: liveCards,
     upcoming: upcomingCards.slice(0, 12),
     note,
@@ -954,9 +966,9 @@ const cachedAllLogs = cached(loadAllPredictionLogsUncached, "log-all-v3", 900, [
 const cachedLeague = cached(loadLeagueUncached, "league-v3", 900, ["league"]);
 const cachedMatch = cached(loadMatchUncached, "match-v3", 600, ["match"]);
 const cachedTeam = cached(loadTeamUncached, "team-v3", 900, ["team"]);
-const cachedTicker = cached(loadTickerUncached, "ticker-v1", 60, ["ticker"]);
+const cachedTicker = cached(loadTickerUncached, "ticker-v2", 20, ["ticker"]);
 const cachedHome = cached(loadHomeMonitorUncached, "home-v3", 300, ["home"]);
-const cachedLive = cached(loadLiveUncached, "live-v1", 30, ["live"]);
+const cachedLive = cached(loadLiveUncached, "live-v2", 10, ["live"]);
 const cachedCommands = cached(loadCommandIndexUncached, "cmd-v1", 900, ["league"]);
 
 export async function loadPredictionLog(slug: string) {
@@ -969,8 +981,17 @@ export async function loadLeague(slug: string) {
   return cachedLeague(slug);
 }
 export async function loadMatch(slug: string, eventId: string) {
-  return cachedMatch(slug, eventId);
+  const data = await cachedMatch(slug, eventId);
+  if (data && isFreshWindow(data.match)) {
+    return loadMatchUncached(slug, eventId, true);
+  }
+  return data;
 }
+
+export async function loadMatchLive(slug: string, eventId: string) {
+  return loadMatchUncached(slug, eventId, true);
+}
+
 export async function loadTeam(slug: string, teamId: string) {
   return cachedTeam(slug, teamId);
 }

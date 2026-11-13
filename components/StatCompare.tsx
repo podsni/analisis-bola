@@ -13,6 +13,11 @@ const ROWS: { key: keyof TeamMatchStats; label: string; kind?: "pct" | "xg" }[] 
   { key: "red", label: "Kartu merah" },
   { key: "saves", label: "Penyelamatan" },
   { key: "offsides", label: "Offside" },
+  { key: "blockedShots", label: "Tembakan terblok" },
+  { key: "tackles", label: "Tackling" },
+  { key: "interceptions", label: "Intersepsi" },
+  { key: "clearances", label: "Clearance" },
+  { key: "crosses", label: "Umpan silang" },
 ];
 
 function fmt(v: number | null | undefined, kind?: "pct" | "xg"): string {

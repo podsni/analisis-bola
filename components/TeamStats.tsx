@@ -1,5 +1,5 @@
 import type { TeamAnalysis } from "@/lib/types";
-import { avgLabel } from "@/lib/format";
+import { avgLabel, pct } from "@/lib/format";
 import { FormPills } from "./FormPills";
 import { TeamLink } from "./TeamLink";
 
@@ -75,6 +75,46 @@ export function TeamStats({ team, side, slug, logo }: { team: TeamAnalysis; side
           </span>
         </div>
       </div>
+      {team.overall.played && team.cleanSheets != null ? (
+        <div className="split-grid form-rates" style={{ marginTop: 14 }}>
+          <div className="stat">
+            <span>Clean sheet</span>
+            <b>
+              {team.cleanSheets}/{team.overall.played}
+              {team.cleanSheetRate != null ? ` · ${pct(team.cleanSheetRate)}` : ""}
+            </b>
+            <span>
+              Kandang {team.homeCleanSheets ?? "—"} · tandang {team.awayCleanSheets ?? "—"}
+            </span>
+          </div>
+          <div className="stat">
+            <span>Gagal mencetak gol</span>
+            <b>
+              {team.failedToScore}/{team.overall.played}
+              {team.failedToScoreRate != null ? ` · ${pct(team.failedToScoreRate)}` : ""}
+            </b>
+            <span>
+              Kandang {team.homeFailedToScore ?? "—"} · tandang {team.awayFailedToScore ?? "—"}
+            </span>
+          </div>
+        </div>
+      ) : null}
+      {team.goalsTrend && team.goalsTrend.length ? (
+        <div className="goals-trend">
+          <p className="meta">Tren gol {team.goalsTrend.length} laga terakhir (mencetak–kebobolan)</p>
+          <ol>
+            {team.goalsTrend.slice().reverse().map((g) => (
+              <li key={g.dateWib + g.opponent}>
+                <span>{g.dateWib}</span>
+                <strong>
+                  {g.gf}–{g.ga}
+                </strong>
+                <em>{g.opponent}</em>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       {team.sampleNote ? <p className="method">{team.sampleNote}</p> : null}
     </article>
   );

@@ -36,10 +36,14 @@ Website analisis statistik sepak bola berbahasa Indonesia. Menampilkan jadwal, h
 ### Data Pertandingan
 - Jadwal dan hasil pertandingan per liga
 - Klasemen liga
-- Skor pertandingan langsung secara realtime (diperbarui setiap 30 detik)
+- Skor pertandingan langsung: papan `/langsung` dan ticker diperbarui setiap 10 detik saat ada laga berjalan, atau setiap 60 detik jika tidak ada
+- Halaman pertandingan yang sedang berlangsung memperbarui skor, statistik, linimasa, dan prediksi berjalan otomatis
 - Riwayat dan detail setiap pertandingan
 - Profil tim beserta riwayat laganya
 - Daftar pencetak gol
+- Susunan pemain dan formasi, jika ESPN menyediakannya
+- Linimasa peristiwa penting (gol, kartu, pergantian)
+- Statistik laga (tembakan, penguasaan bola, kartu, dan metrik lain yang tersedia)
 
 ### Prediksi Statistik
 - Peluang menang, seri, dan kalah dalam persentase
@@ -47,6 +51,11 @@ Website analisis statistik sepak bola berbahasa Indonesia. Menampilkan jadwal, h
 - Prediksi total gol (di atas atau di bawah 1,5, 2,5, dan 3,5 gol)
 - Prediksi yang menyesuaikan skor saat laga sedang berlangsung
 - Daftar laga terakhir tiap tim yang dipakai sebagai dasar prediksi
+- Peluang kedua tim mencetak gol, dihitung dari matriks skor model
+- Form kandang dan tandang, tren gol, clean sheet, dan laga tanpa gol
+- Pecahan gol babak 1 dan babak 2, jika sumber data menyediakannya
+- Tingkat keyakinan model (Tinggi / Sedang / Rendah) plus penjelasan mengapa model condong ke satu hasil
+- Bagian Rekomendasi statistik: hasil paling mungkin, kisaran gol, dan catatan jika datanya tipis (bukan saran taruhan)
 
 ### Log dan Akurasi Prediksi
 - Riwayat semua prediksi
@@ -56,8 +65,9 @@ Website analisis statistik sepak bola berbahasa Indonesia. Menampilkan jadwal, h
 - Statistik akurasi, Brier score, dan grafik kalibrasi
 
 ### Performa
-- Halaman di-cache dan diperbarui otomatis setiap 5 menit
-- Pembaruan data harian otomatis
+- Log prediksi dan data liga di-cache agar halaman tetap cepat (sekitar 1–2 detik)
+- Skor langsung dan ringkasan laga berjalan tidak memakai cache panjang
+- Pembaruan data harian otomatis plus pemanasan cache
 
 ---
 
@@ -170,6 +180,7 @@ Semua endpoint mengembalikan JSON.
 | `GET /api/liga/{slug}/model` | Parameter model dan hasil backtest |
 | `GET /api/liga/{slug}/log` | Log prediksi per liga |
 | `GET /api/liga/{slug}/pertandingan/{id}` | Detail dan prediksi satu laga |
+| `GET /api/liga/{slug}/pertandingan/{id}/live` | Pembaruan segar untuk laga berjalan (tanpa cache) |
 | `GET /api/liga/{slug}/tim/{id}` | Data satu tim |
 | `GET /api/log` | Log prediksi semua liga |
 | `GET /api/langsung` | Skor langsung |
@@ -213,10 +224,14 @@ Cron di `vercel.json` berjalan setiap hari pukul 07.00 UTC (14.00 WIB) untuk mem
 
 ## Sumber Data
 
-- **ESPN Site API** (`site.api.espn.com`): tidak resmi dan tanpa kunci, untuk Premier League, La Liga, dan Serie A.
-- **TheSportsDB** (kunci gratis `123`): untuk Liga Super Indonesia.
+- **ESPN Site API** (`site.api.espn.com`): tidak resmi dan tanpa kunci, untuk Premier League, La Liga, dan Serie A. Papan skor, ringkasan laga (statistik, peristiwa, susunan pemain, skor babak), klasemen, dan jadwal.
+- **TheSportsDB** (kunci gratis `123`): untuk Liga Super Indonesia, cakupannya terbatas.
 
-Data milik penyedia masing-masing. API tidak resmi bisa berubah sewaktu-waktu.
+Sumber lain yang diteliti tetapi belum dipasang:
+- **OpenLigaDB**: gratis dan tanpa kunci, tetapi hampir hanya untuk liga Jerman.
+- **API-Football** (api-sports.io) dan **football-data.org**: punya paket gratis dengan skor langsung yang lebih rapat, tetapi membutuhkan kunci API (belum didaftarkan).
+
+Data milik penyedia masing-masing. API tidak resmi bisa berubah sewaktu-waktu. Kelambatan skor mengikuti ESPN, biasanya puluhan detik sampai sekitar satu atau dua menit setelah perubahan resmi, plus interval refresh situs (10 detik saat laga berjalan).
 
 ---
 
@@ -224,8 +239,9 @@ Data milik penyedia masing-masing. API tidak resmi bisa berubah sewaktu-waktu.
 
 - Data Liga Super Indonesia masih tipis, sehingga belum ada model dan log prediksinya.
 - Tidak ada data xG resmi tim; perkiraan gol berasal dari model.
-- Akurasi tebakan hasil seri masih rendah.
-- Halaman pertama setelah cache diperbarui bisa sedikit lebih lambat.
+- Pecahan gol babak 1/2 dan susunan pemain hanya tampil jika ESPN mengirimnya. Tren babak sepanjang musim tidak dihitung karena papan skor tahunan tidak memuat skor per babak.
+- Akurasi tebakan hasil seri dan skor tepat masih rendah.
+- Halaman pertama setelah cache diperbarui bisa sedikit lebih lambat. Log prediksi tetap memakai cache panjang agar tidak lambat.
 - Semua waktu ditampilkan dalam WIB (UTC+7).
 
 ---

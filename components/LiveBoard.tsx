@@ -113,13 +113,25 @@ export function LiveBoard() {
 
   useEffect(() => {
     load();
-    const poll = setInterval(load, 30_000);
     const tick = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(tick);
+  }, [load]);
+
+  useEffect(() => {
+    const ms = Math.max(5, data?.pollSeconds ?? 10) * 1000;
+    const poll = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void load();
+    }, ms);
+    const onVis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       clearInterval(poll);
-      clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVis);
     };
-  }, [load]);
+  }, [load, data?.pollSeconds]);
 
   if (loading && !data) {
     return <p className="loading">$ memuat papan skor<span className="cursor" /></p>;

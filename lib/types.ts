@@ -24,6 +24,7 @@ export type MatchEvent = {
   team?: string;
   scoring: boolean;
   text: string;
+  period?: number;
 };
 
 export type MatchSummary = {
@@ -41,6 +42,8 @@ export type MatchSummary = {
   home: { id: string; name: string; score?: string | null; logo?: string };
   away: { id: string; name: string; score?: string | null; logo?: string };
   events?: MatchEvent[];
+  halfTime?: { home: number; away: number } | null;
+  secondHalf?: { home: number; away: number } | null;
 };
 
 export type Scorer = {
@@ -82,6 +85,15 @@ export type TeamAnalysis = {
   home: TeamSplit;
   away: TeamSplit;
   sampleNote?: string;
+  cleanSheets?: number;
+  failedToScore?: number;
+  cleanSheetRate?: number | null;
+  failedToScoreRate?: number | null;
+  homeCleanSheets?: number;
+  awayCleanSheets?: number;
+  homeFailedToScore?: number;
+  awayFailedToScore?: number;
+  goalsTrend?: GoalPoint[];
 };
 
 export type HeadToHeadMatch = TeamFormItem & {
@@ -114,6 +126,11 @@ export type TeamMatchStats = {
   offsides?: number;
   saves?: number;
   expectedGoals?: number | null;
+  blockedShots?: number;
+  tackles?: number;
+  interceptions?: number;
+  clearances?: number;
+  crosses?: number;
 };
 
 export type GoalPoint = { dateWib: string; gf: number; ga: number; opponent: string };
@@ -225,6 +242,7 @@ export type PoissonEstimate = {
   predScore?: string;
   oneXtwoHasil?: "TEPAT" | "MELESET";
   scoreHasil?: "TEPAT" | "MELESET";
+  pBtts?: number;
 };
 
 export type ModelContribution = {
@@ -350,6 +368,40 @@ export type LeaguePayload = {
   estimates?: Record<string, PoissonEstimate>;
 };
 
+
+export type LineupPlayer = {
+  id: string;
+  name: string;
+  jersey?: string;
+  position?: string;
+  starter: boolean;
+  formationPlace?: number;
+  subbedIn?: boolean;
+  subbedOut?: boolean;
+};
+
+export type TeamLineup = {
+  teamId: string;
+  team: string;
+  formation?: string;
+  starters: LineupPlayer[];
+  bench: LineupPlayer[];
+};
+
+export type MatchRecommendation = {
+  confidence: "Tinggi" | "Sedang" | "Rendah";
+  headline: string;
+  outcomeLabel: string;
+  outcomeP: number;
+  predScore?: string;
+  goalRange?: { from: number; to: number | null; p: number; label: string };
+  btts?: { p: number; lean: "ya" | "tidak" | "seimbang" };
+  bullets: string[];
+  why: string;
+  caveats: string[];
+  disclaimer: string;
+};
+
 export type MatchAnalysisPayload = {
   slug: string;
   leagueName: string;
@@ -364,6 +416,8 @@ export type MatchAnalysisPayload = {
   limitedNote?: string;
   matchStats?: { home: TeamMatchStats; away: TeamMatchStats };
   contributions?: MatchContributions;
+  lineups?: { home: TeamLineup; away: TeamLineup };
+  recommendation?: MatchRecommendation;
 };
 
 export type LiveMatchCard = {

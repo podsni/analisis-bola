@@ -1,6 +1,7 @@
 import type { LeagueDef } from "./leagues";
 import type {
   HeadToHeadMatch,
+  LineupPlayer,
   MatchEvent,
   MatchSummary,
   Scorer,
@@ -9,6 +10,7 @@ import type {
   TeamAnalysis,
   TeamFormItem,
   TeamInfo,
+  TeamLineup,
   TeamMatchStats,
   TeamSplit,
 } from "./types";
@@ -126,6 +128,10 @@ function translateEventType(raw: string, flags: { scoring?: boolean; yellow?: bo
   if (flags.red || n.includes("red")) return "Kartu merah";
   if (flags.yellow || n.includes("yellow")) return "Kartu kuning";
   if (n.includes("substitut")) return "Pergantian";
+  if (n.includes("halftime") || n.includes("half time")) return "Babak pertama selesai";
+  if (n.includes("start 2nd") || n.includes("second half")) return "Babak kedua dimulai";
+  if (n.includes("end regular") || n.includes("full time")) return "Laga selesai";
+  if (n.includes("kickoff") || n.includes("kick-off")) return "Kickoff";
   return raw || "Peristiwa";
 }
 
@@ -173,6 +179,29 @@ function mapDetails(details: unknown, homeId: string, awayId: string, homeName: 
     });
   }
   return out;
+}
+
+
+function periodScores(comp: { linescores?: Array<{ displayValue?: string; value?: number }> } | undefined): number[] {
+  const raw = comp?.linescores;
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const out: number[] = [];
+  for (const row of raw) {
+    const n = typeof row.value === "number" ? row.value : toNum(row.displayValue);
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+function halvesFromCompetitors(home: Record<string, unknown>, away: Record<string, unknown>): Pick<MatchSummary, "halfTime" | "secondHalf"> {
+  const hs = periodScores(home as { linescores?: Array<{ displayValue?: string; value?: number }> });
+  const as = periodScores(away as { linescores?: Array<{ displayValue?: string; value?: number }> });
+  if (!hs.length || !as.length || hs.length !== as.length) return {};
+  const halfTime = { home: hs[0], away: as[0] };
+  const secondHalf = hs.length >= 2
+    ? { home: hs.slice(1).reduce((s, n) => s + n, 0), away: as.slice(1).reduce((s, n) => s + n, 0) }
+    : undefined;
+  return { halfTime, secondHalf };
 }
 
 function mapEvent(ev: EspnEvent): MatchSummary | null {
@@ -236,6 +265,7 @@ function mapEvent(ev: EspnEvent): MatchSummary | null {
       logo: teamLogo(awayTeam, awayId),
     },
     events: mapDetails(comp?.details, homeId, awayId, homeName, awayName),
+    ...halvesFromCompetitors(home, away),
   };
 }
 
@@ -416,6 +446,13 @@ export function analyzeSchedule(
   const home = emptySplit();
   const away = emptySplit();
   const formItems: TeamFormItem[] = [];
+  let cleanSheets = 0;
+  let failedToScore = 0;
+  let homeCleanSheets = 0;
+  let awayCleanSheets = 0;
+  let homeFailedToScore = 0;
+  let awayFailedToScore = 0;
+  const goalsTrend: { dateWib: string; gf: number; ga: number; opponent: string }[] = [];
 
   for (const ev of finished) {
     const isHome = ev.home.id === teamId;
@@ -434,8 +471,20 @@ export function analyzeSchedule(
     formItems.push(item);
     addResult(overall, scored, conceded);
     addResult(isHome ? home : away, scored, conceded);
+    if (conceded === 0) {
+      cleanSheets += 1;
+      if (isHome) homeCleanSheets += 1;
+      else awayCleanSheets += 1;
+    }
+    if (scored === 0) {
+      failedToScore += 1;
+      if (isHome) homeFailedToScore += 1;
+      else awayFailedToScore += 1;
+    }
+    goalsTrend.push({ dateWib: ev.dateWib, gf: scored, ga: conceded, opponent: item.opponent });
   }
 
+  const n = finished.length;
   return {
     id: teamId,
     name: teamName,
@@ -449,6 +498,15 @@ export function analyzeSchedule(
         : finished.length <= 10
           ? `Analisis memakai ${finished.length} pertandingan selesai yang tersedia dari jadwal tim di ESPN.`
           : undefined,
+    cleanSheets,
+    failedToScore,
+    cleanSheetRate: n ? cleanSheets / n : null,
+    failedToScoreRate: n ? failedToScore / n : null,
+    homeCleanSheets,
+    awayCleanSheets,
+    homeFailedToScore,
+    awayFailedToScore,
+    goalsTrend: goalsTrend.slice(-8),
   };
 }
 
@@ -647,6 +705,11 @@ function parseTeamStats(
     offsides: boxStat(stats, ["offsides"]),
     saves: boxStat(stats, ["saves"]),
     expectedGoals: xg ?? null,
+    blockedShots: boxStat(stats, ["blockedShots"]),
+    tackles: boxStat(stats, ["totalTackles", "effectiveTackles"]),
+    interceptions: boxStat(stats, ["interceptions"]),
+    clearances: boxStat(stats, ["effectiveClearance", "totalClearance"]),
+    crosses: boxStat(stats, ["totalCrosses"]),
   };
 }
 
@@ -662,6 +725,7 @@ function mapKeyEvents(raw: unknown, homeId: string, awayId: string, homeName: st
       scoringPlay?: boolean;
       text?: string;
       shortText?: string;
+      period?: { number?: number } | number;
       participants?: Array<{ athlete?: { displayName?: string } }>;
     };
     const rawType = o.type?.text || o.type?.type || "";
@@ -678,7 +742,7 @@ function mapKeyEvents(raw: unknown, homeId: string, awayId: string, homeName: st
       flags.red ||
       flags.own ||
       flags.penalty ||
-      /goal|card|penalty|red|yellow/i.test(rawType);
+      /goal|card|penalty|red|yellow|substitut|halftime|half time|start 2nd|end regular|full time|kickoff/i.test(rawType);
     if (!interesting) continue;
     const teamId = o.team?.id ? String(o.team.id) : undefined;
     const team = o.team?.displayName || (teamId === homeId ? homeName : teamId === awayId ? awayName : undefined);
@@ -693,6 +757,7 @@ function mapKeyEvents(raw: unknown, homeId: string, awayId: string, homeName: st
       team,
       scoring: flags.scoring || typ.startsWith("Gol"),
       text: o.shortText || o.text || [minute, typ, player, team ? `(${team})` : ""].filter(Boolean).join(" "),
+      period: typeof o.period === "number" ? o.period : o.period?.number,
     });
   }
   return out;
@@ -757,21 +822,76 @@ function mapSeriesEvent(ev: Record<string, unknown>, perspectiveId: string): Hea
   };
 }
 
+
+function parseLineups(raw: unknown, homeId: string, awayId: string, homeName: string, awayName: string): { home: TeamLineup; away: TeamLineup } | null {
+  if (!Array.isArray(raw) || raw.length < 2) return null;
+  const parseSide = (block: Record<string, unknown>, fallbackId: string, fallbackName: string): TeamLineup => {
+    const team = (block.team ?? {}) as { id?: string; displayName?: string };
+    const roster = Array.isArray(block.roster) ? block.roster : [];
+    const players: LineupPlayer[] = [];
+    for (const row of roster) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as {
+        starter?: boolean;
+        jersey?: string;
+        formationPlace?: number | string;
+        subbedIn?: boolean;
+        subbedOut?: boolean;
+        athlete?: { id?: string; displayName?: string; shortName?: string };
+        position?: { abbreviation?: string; displayName?: string; name?: string };
+      };
+      const name = r.athlete?.displayName || r.athlete?.shortName;
+      if (!name) continue;
+      const placeRaw = r.formationPlace;
+      const formationPlace = typeof placeRaw === "number" ? placeRaw : toNum(placeRaw) || undefined;
+      players.push({
+        id: String(r.athlete?.id ?? `${fallbackId}-${name}`),
+        name,
+        jersey: r.jersey,
+        position: r.position?.abbreviation || r.position?.displayName || r.position?.name,
+        starter: !!r.starter,
+        formationPlace: formationPlace && formationPlace > 0 ? formationPlace : undefined,
+        subbedIn: r.subbedIn || undefined,
+        subbedOut: r.subbedOut || undefined,
+      });
+    }
+    const starters = players.filter((x) => x.starter).sort((a, b) => (a.formationPlace ?? 99) - (b.formationPlace ?? 99));
+    const bench = players.filter((x) => !x.starter);
+    const formation = typeof block.formation === "string" && block.formation.trim() ? block.formation.trim() : undefined;
+    return {
+      teamId: String(team.id ?? fallbackId),
+      team: team.displayName || fallbackName,
+      formation,
+      starters,
+      bench,
+    };
+  };
+  const homeB = raw.find((b) => b && typeof b === "object" && (b as { homeAway?: string }).homeAway === "home") ?? raw[0];
+  const awayB = raw.find((b) => b && typeof b === "object" && (b as { homeAway?: string }).homeAway === "away") ?? raw[1];
+  const home = parseSide(homeB as Record<string, unknown>, homeId, homeName);
+  const away = parseSide(awayB as Record<string, unknown>, awayId, awayName);
+  if (!home.starters.length && !away.starters.length && !home.bench.length && !away.bench.length) return null;
+  return { home, away };
+}
+
 export async function fetchEspnSummary(
   league: LeagueDef,
-  eventId: string
+  eventId: string,
+  opts?: { fresh?: boolean }
 ): Promise<{
   match: MatchSummary | null;
   stats: { home: TeamMatchStats; away: TeamMatchStats } | null;
   events: MatchEvent[];
   series: HeadToHeadMatch[];
   seriesSummary?: string;
+  lineups?: { home: TeamLineup; away: TeamLineup };
 }> {
   const slug = league.espnSlug!;
   const empty = { match: null as MatchSummary | null, stats: null, events: [] as MatchEvent[], series: [] as HeadToHeadMatch[] };
   try {
     const data = (await espnFetch(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/summary?event=${eventId}`
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/summary?event=${eventId}`,
+      opts?.fresh ? false : REVALIDATE
     )) as Record<string, unknown>;
     const header = data.header as { id?: string; competitions?: Array<Record<string, unknown>> } | undefined;
     let match: MatchSummary | null = null;
@@ -798,6 +918,7 @@ export async function fetchEspnSummary(
 
     const keyEvents = mapKeyEvents(data.keyEvents, match.home.id, match.away.id, match.home.name, match.away.name);
     const events = keyEvents.length ? keyEvents : match.events ?? [];
+    const lineups = parseLineups(data.rosters, match.home.id, match.away.id, match.home.name, match.away.name) ?? undefined;
     match = { ...match, events };
 
     const seriesBlocks = Array.isArray(data.seasonseries) ? (data.seasonseries as Array<Record<string, unknown>>) : [];
@@ -815,6 +936,7 @@ export async function fetchEspnSummary(
       events,
       series,
       seriesSummary: typeof h2hBlock?.summary === "string" ? h2hBlock.summary : undefined,
+      lineups,
     };
   } catch {
     return empty;

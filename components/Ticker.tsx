@@ -11,18 +11,29 @@ export function Ticker() {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/ticker")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!alive) return;
-        setItems(Array.isArray(d.items) ? d.items : []);
-        setFetchedAtWib(d.fetchedAtWib ?? "");
-      })
-      .catch(() => {
-        if (alive) setItems([]);
-      });
+    const pull = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetch("/api/ticker", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d) => {
+          if (!alive) return;
+          setItems(Array.isArray(d.items) ? d.items : []);
+          setFetchedAtWib(d.fetchedAtWib ?? "");
+        })
+        .catch(() => {
+          if (alive) setItems((prev) => prev ?? []);
+        });
+    };
+    pull();
+    const id = setInterval(pull, 20_000);
+    const onVis = () => {
+      if (!document.hidden) pull();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 

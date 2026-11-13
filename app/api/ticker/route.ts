@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadTicker } from "@/lib/data";
 
-export const revalidate = 60;
+export const revalidate = 20;
 export const runtime = "nodejs";
 
 export async function GET() {
