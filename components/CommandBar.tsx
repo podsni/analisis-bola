@@ -208,7 +208,7 @@ export function CommandBar() {
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="EPL  TEAM MCI  LOG  LIVE"
+            placeholder="EPL / LOG / LIVE"
             autoComplete="off"
             spellCheck={false}
           />
