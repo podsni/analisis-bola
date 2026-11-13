@@ -964,7 +964,7 @@ async function loadAllPredictionLogsUncached(): Promise<{
 const cachedPredictionLog = cached(loadPredictionLogUncached, "log-v3", 900, ["log"]);
 const cachedAllLogs = cached(loadAllPredictionLogsUncached, "log-all-v3", 900, ["log"]);
 const cachedLeague = cached(loadLeagueUncached, "league-v3", 900, ["league"]);
-const cachedMatch = cached(loadMatchUncached, "match-v3", 600, ["match"]);
+const cachedMatch = cached(loadMatchUncached, "match-v4", 600, ["match"]);
 const cachedTeam = cached(loadTeamUncached, "team-v3", 900, ["team"]);
 const cachedTicker = cached(loadTickerUncached, "ticker-v2", 20, ["ticker"]);
 const cachedHome = cached(loadHomeMonitorUncached, "home-v3", 300, ["home"]);
